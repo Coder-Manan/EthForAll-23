@@ -22,7 +22,9 @@ struct user {
     string name;
     uint256 uid;
     string email;
-    uint256 tokens; //key = propertyId, value = number of tokens + initial token price*(2^16)
+    uint256[] tokenIds;
+    uint256[] initialPrices;
+    uint16[] noOfTokens;
     uint16 monthlyIncome;
     uint8 avgMonthlyOccupancy;
     uint24 totalIncome; //stored seperately because the user may use a part of this income only to invest in tokens
@@ -34,10 +36,12 @@ struct token {
     uint256 tokenPrice;
     uint256[] propertyIds;
     uint256 tokenId;
+    uint16 totalNumber;
+    uint16 numberRemaining;
 }
 
 contract Main {
-    address payable private owner;
+    address private owner;
     mapping(uint256 => propertyStruct) allProperties;
     mapping(uint256 => user) allUsers;
     mapping(uint256 => token) allTokens;
@@ -45,13 +49,13 @@ contract Main {
     uint256[] tokenIds;
     // uint256[] userIds;
     constructor() {
-        owner = payable(msg.sender);
+        owner = msg.sender;
     }
     modifier onlyOwner() {
         require(msg.sender == owner, "Only owner can call this function.");
         _;
     }
-    function setOwner(address payable _owner) external onlyOwner{
+    function setOwner(address _owner) external onlyOwner{
         owner = _owner;
     }
     function getOwner() external view returns (address) {
@@ -98,13 +102,20 @@ contract Main {
         return allTokens[_tokenId];
     }
 
-    function buyToken(uint256 _tokenId) external payable returns (bool){
-        if (msg.sender.balance > allTokens[_tokenId].tokenPrice) {
-            //transfer token to user
-            (bool success, ) = owner.call{value:msg.value}("");
-            //transfer money to owner
-            return success;
+    function buyToken(uint256 _tokenId, uint16 noOfTokens) external payable returns (bool, string memory){
+        if (msg.value != noOfTokens * allTokens[_tokenId].tokenPrice || allTokens[_tokenId].numberRemaining < noOfTokens){
+            return (false, 'wrong amount sent');
         }
-        return true;
+        else {
+            payable(owner).send(msg.value);
+            token memory currToken = allTokens[_tokenId];
+            for (uint i = 0; i < currToken.propertyIds.length; i++){
+                allProperties[currToken.propertyIds[i]].tokensSold += noOfTokens; //reduce number of available tokens of the property
+            }
+            allUsers[msg.sender].tokenIds.push(_tokenId);
+            allUsers[msg.sender].initialPrices.push(allTokens[_tokenId].tokenPrice);
+            allUsers[msg.sender].noOfTokens.push(noOfTokens)
+            return (true, 'you have successfully bought tokens');
+        }
     }
 }
